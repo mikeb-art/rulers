@@ -312,8 +312,8 @@ function statusOf(rec){
   const now = Date.now();
   const due = lastDue(rec.cadence, now);
   const met = rec.date && due !== null && rec.date.getTime() >= due - EARLY_DAYS*86400000;
-  if(due !== null && !met) return "over";                                       // missed the current scheduled Wednesday (never-done counts too)
-  const nxt = nextDue(rec.cadence, now);                                        // current for this period — flag if the next upload is coming up soon
+  if(due !== null && !met) return "over";
+  const nxt = nextDue(rec.cadence, now);
   if(nxt !== null && (nxt - now) <= LEAD_DAYS*86400000) return "due";
   return "ok";
 }
@@ -415,41 +415,42 @@ function render(){
   const ps = presses(currentLoc);
   if(!ps.length){ el.innerHTML = '<div class="empty"><div class="ei">📭</div>No ruler measurements found for this view.</div>'; return; }
 
-  const c = counts(currentLoc);
-  const stats = `<div class="stats">
-    <div class="stat tot"><div class="lbl">Heat Press × Material</div><div class="val">${c.tot}</div></div>
-    <div class="stat ok"><div class="lbl">Current</div><div class="val">${c.ok}</div></div>
-    <div class="stat due"><div class="lbl">Next due</div><div class="val">${c.due}</div></div>
-    <div class="stat over"><div class="lbl">Overdue</div><div class="val">${c.over}</div></div>
-  </div>`;
-
-  // attention panels — overdue and due-soon kept separate
+  // rosters — "Needs a ruler" = behind right now; "Next Uploads Due" = the upcoming scheduled batch (forward-looking, any status)
+  const now = Date.now();
   const overdue = [], duesoon = [];
   ps.forEach(p => MAT_ORDER.forEach(mat=>{
     const rec = recFor(p, mat), st = statusOf(rec);
     if(st==="over") overdue.push({p, mat, rec, st});
-    else if(st==="due") duesoon.push({p, mat, rec, st});
+    const nxt = nextDue(rec.cadence, now);
+    if(nxt !== null && (nxt - now) <= LEAD_DAYS*86400000) duesoon.push({p, mat, rec, st, nxt});
   }));
   const overdueDays = r => r.date ? daysAgo(r.date) : 99999;
   overdue.sort((x,y)=> overdueDays(y.rec)-overdueDays(x.rec));
-  duesoon.sort((x,y)=> (nextDue(x.rec.cadence,Date.now())||0)-(nextDue(y.rec.cadence,Date.now())||0));
-  const cardHtml = a => {
+  duesoon.sort((x,y)=> (x.nxt-y.nxt) || x.p.localeCompare(y.p) || MAT_ORDER.indexOf(x.mat)-MAT_ORDER.indexOf(y.mat));
+  const overdueCard = a => {
+    const due = lastDue(a.rec.cadence, now);
     const upl = a.rec.date ? "last uploaded "+fmt(a.rec.date) : "never uploaded";
-    let line;
-    if(a.st==="over"){
-      const due = lastDue(a.rec.cadence, Date.now());
-      line = `${a.rec.cadence} · was due ${due?fmtT(due):"—"} · ${upl} — overdue`;
-    } else {
-      const nxt = nextDue(a.rec.cadence, Date.now());
-      line = `${a.rec.cadence} · due ${nxt?fmtT(nxt):"—"} · ${upl} — due soon`;
-    }
-    return `<div class="alert ${a.st==="due"?"due":""}"><div class="t">${a.p} · ${a.mat}</div>
-      <div class="d">${line}</div></div>`;
+    return `<div class="alert"><div class="t">${a.p} · ${a.mat}</div>
+      <div class="d">${a.rec.cadence} · was due ${due?fmtT(due):"—"} · ${upl} — overdue</div></div>`;
   };
-  const overdueHtml = overdue.length ? overdue.map(cardHtml).join("")
+  const duesoonCard = a => {
+    const upl = a.rec.date ? "last uploaded "+fmt(a.rec.date) : "never uploaded";
+    const behind = a.st==="over" ? ' · <b style="color:var(--red)">behind now</b>' : "";
+    return `<div class="alert due"><div class="t">${a.p} · ${a.mat}</div>
+      <div class="d">${a.rec.cadence} · due ${fmtT(a.nxt)} · ${upl}${behind}</div></div>`;
+  };
+  const overdueHtml = overdue.length ? overdue.map(overdueCard).join("")
     : '<div class="d" style="padding:0 4px;color:var(--muted)">Nothing overdue in this view. 🎉</div>';
-  const duesoonHtml = duesoon.length ? duesoon.map(cardHtml).join("")
-    : '<div class="d" style="padding:0 4px;color:var(--muted)">Nothing due soon in this view.</div>';
+  const duesoonHtml = duesoon.length ? duesoon.map(duesoonCard).join("")
+    : '<div class="d" style="padding:0 4px;color:var(--muted)">Nothing coming due in the next window.</div>';
+
+  const c = counts(currentLoc);
+  const stats = `<div class="stats">
+    <div class="stat tot"><div class="lbl">Heat Press × Material</div><div class="val">${c.tot}</div></div>
+    <div class="stat ok"><div class="lbl">Current</div><div class="val">${c.tot - overdue.length}</div></div>
+    <div class="stat due"><div class="lbl">Next due</div><div class="val">${duesoon.length}</div></div>
+    <div class="stat over"><div class="lbl">Overdue</div><div class="val">${overdue.length}</div></div>
+  </div>`;
   const attention = `<div class="panel"><div class="panel-head"><h2>⏰ Needs a ruler</h2>
       <span class="ago">Overdue by cadence (monthly / quarterly)</span></div>
       <div class="alerts">${overdueHtml}</div></div>
