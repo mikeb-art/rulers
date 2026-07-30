@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WS Display — Ruler Verification Tracker</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --navy:#14417e; --navy-2:#1c4e8a; --navy-3:#0f3568;
+    --hl:#2f6cb3; --gold:#f3d375; --ltblue:#9fc3ea;
+    --bg:#eef2f7; --card:#ffffff; --ink:#1b2a41; --muted:#6b7f99;
+    --blue:#1f6fd6; --green:#1e9e4a; --amber:#d98a00; --red:#d93838; --crit:#8e1616;
+    --radius:12px; --shadow:0 2px 10px rgba(20,50,90,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",-apple-system,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+  .sidebar{width:255px;background:linear-gradient(180deg,var(--navy-2),var(--navy) 40%,var(--navy-3));color:#fff;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;overflow-y:auto;z-index:10}
+  .logo-card{background:#fff;margin:16px 16px 6px;border-radius:6px;padding:8px 12px;text-align:center}
+  .logo-card .tag{font-size:8px;letter-spacing:.4px;color:#6b7f99;text-transform:uppercase}
+  .logo-card .logo{font-weight:900;font-size:22px;color:#0d2f60;letter-spacing:-.5px}
+  .logo-card .logo span{color:#2f6cb3}
+  .app-title{text-align:center;font-size:12px;font-weight:700;letter-spacing:2.2px;margin:6px 0 14px;color:#fff}
+  .nav-label{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--ltblue);padding:12px 20px 4px;text-transform:uppercase}
+  .nav-label.loc{color:var(--gold)}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;font-size:14px;color:#dbe7f5;cursor:pointer;border-left:4px solid transparent;text-decoration:none}
+  .nav-item:hover{background:rgba(255,255,255,.07)}
+  .nav-item.active{background:var(--hl);border-left-color:var(--gold);color:#fff;font-weight:600}
+  .nav-item .ico{width:18px;text-align:center}
+  .nav-item .cnt{margin-left:auto;font-size:11px;background:rgba(255,255,255,.15);border-radius:10px;padding:1px 8px}
+  .nav-item .cnt.bad{background:var(--red)}
+  .side-foot{margin-top:auto;padding:14px}
+  .user-card{background:rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;font-size:13px;display:none}
+  .user-card .role{font-size:11px;color:var(--ltblue)}
+  .signout{margin-top:10px;width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);color:#dbe7f5;border-radius:8px;padding:8px;font-size:13px;cursor:pointer}
+  .signout:hover{background:rgba(255,255,255,.15)}
+  .main{margin-left:255px;flex:1;display:flex;flex-direction:column;min-width:0}
+  .topbar{background:#fff;padding:14px 26px;box-shadow:0 1px 4px rgba(20,50,90,.06);position:sticky;top:0;z-index:5}
+  .topbar h1{font-size:19px;display:flex;align-items:center;gap:8px}
+  .topbar .sub{font-size:12.5px;color:#5a7bb0;margin-top:2px}
+  .content{padding:22px 26px 60px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:22px}
+  .stat{background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:14px 18px;border-top:4px solid var(--blue)}
+  .stat .lbl{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+  .stat .val{font-size:30px;font-weight:800;margin-top:2px}
+  .stat.ok{border-top-color:var(--green)} .stat.ok .val{color:var(--green)}
+  .stat.due{border-top-color:var(--amber)} .stat.due .val{color:var(--amber)}
+  .stat.over{border-top-color:var(--red)} .stat.over .val{color:var(--red)}
+  .stat.tot{border-top-color:var(--blue)} .stat.tot .val{color:var(--ink)}
+  .panel{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #e7edf5;flex-wrap:wrap}
+  .panel-head h2{font-size:15.5px;flex:1;min-width:200px}
+  .pill{border:1px solid #d3deeb;background:#fff;color:#3d5a80;border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer}
+  .pill:hover{background:#f0f5fb}
+  .pill.on{background:var(--navy-2);color:#fff;border-color:var(--navy-2)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#51698a;background:#eef3f9;padding:8px 18px;text-align:left;border-top:1px solid #e7edf5}
+  td{padding:9px 18px;border-top:1px solid #f1f5fa;vertical-align:middle}
+  tr:hover td{background:#fbfdff}
+  .mat{font-weight:600}
+  .press-h{font-weight:700;font-size:11px;color:#3d5a80;padding:12px 18px 2px;text-transform:uppercase;letter-spacing:.6px}
+  .chip{font-size:10.5px;font-weight:700;letter-spacing:.3px;border-radius:10px;padding:2px 9px;white-space:nowrap;display:inline-block}
+  .c-ok{background:#dff4e4;color:#1e9e4a} .c-due{background:#fff3d6;color:#9a7200} .c-over{background:#fde1e1;color:#c02b2b} .c-never{background:#eceff3;color:#6b7f99}
+  .c-month{background:#e8f6df;color:#4e8a1e} .c-qtr{background:#fdeed3;color:#c07600}
+  .ago{font-size:11.5px;color:var(--muted)}
+  .dev{font-weight:700} .dev.hi{color:var(--red)} .dev.mid{color:var(--amber)} .dev.lo{color:var(--green)}
+  .alerts{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;padding:16px 18px}
+  .alert{border-radius:10px;padding:11px 14px;border:1px solid #f3c0c0;background:#fdECEC}
+  .alert.due{border-color:#f0dca6;background:#fff6e3}
+  .alert .t{font-weight:800;font-size:13px}
+  .alert .d{font-size:12px;color:#5a6b85;margin-top:2px}
+  .empty{padding:56px 20px;text-align:center;color:#7d97b6;font-size:15px}
+  .empty .ei{font-size:26px;margin-bottom:8px}
+  .gate{margin:80px auto;max-width:420px;background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:36px;text-align:center}
+  .gate .big{font-size:34px;margin-bottom:10px}
+  .gate h2{margin-bottom:8px}
+  .gate p{font-size:13.5px;color:var(--muted);margin-bottom:18px}
+  .gbtn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer}
+  .gbtn:hover{background:#1a5fbd}
+  .loading{padding:40px;text-align:center;color:var(--muted);font-size:14px}
+  .note{font-size:12px;color:var(--muted);padding:0 18px 14px}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="logo-card"><div class="tag">WholeSale Displays</div><div class="logo">WS<span>Display</span></div></div>
+  <div class="app-title">RULER TRACKER</div>
+  <div class="nav-label">Views</div>
+  <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📏</span> All Presses</div>
+  <div class="nav-label loc">Locations</div>
+  <div class="nav-item" data-loc="CA" onclick="selectLoc('CA')"><span class="ico">☀️</span> California <span class="cnt" id="cntCA">–</span></div>
+  <div class="nav-item" data-loc="MX" onclick="selectLoc('MX')"><span class="ico">🌵</span> Mexico <span class="cnt" id="cntMX">–</span></div>
+  <div class="nav-item" data-loc="PA" onclick="selectLoc('PA')"><span class="ico">🔔</span> Pennsylvania <span class="cnt" id="cntPA">–</span></div>
+  <div class="nav-label">Other Dashboards</div>
+  <a class="nav-item" href="https://mikeb-art.github.io/barbieri-doc-monitoring/"><span class="ico">🎯</span> Barbieri DOC</a>
+  <a class="nav-item" href="https://mikeb-art.github.io/machine-maintenance/"><span class="ico">🛠</span> Machine Maintenance</a>
+  <a class="nav-item" href="https://mikeb-art.github.io/temp-humidity/"><span class="ico">🌡</span> Temp &amp; Humidity</a>
+  <div class="side-foot">
+    <div class="user-card" id="userCard"><div id="userName"></div><div class="role" id="userEmail"></div></div>
+    <button class="signout" id="authBtn" onclick="handleAuthClick()">Sign in with Google</button>
+  </div>
+</div>
+<div class="main">
+  <div class="topbar">
+    <h1 id="pageTitle">📏 Ruler Verification Tracker</h1>
+    <div class="sub" id="pageSub">Media-compensation ruler checks across CA · MX · PA — monthly &amp; quarterly by material. Green = current · Amber = due soon · Red = overdue.</div>
+  </div>
+  <div class="content" id="content">
+    <div class="gate" id="gate">
+      <div class="big">📏</div>
+      <h2>Ruler Verification Tracker</h2>
+      <p>Sign in with your <b>wsdisplay.com</b> Google account to see which rulers are due and overdue.</p>
+      <button class="gbtn" onclick="handleAuthClick()">Sign in with Google</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ CONFIG ============ */
+const CONFIG = {
+  CLIENT_ID: "919263581465-0g7m20g0j2b9g6e1njsm9b9kmaspsf4e.apps.googleusercontent.com",
+  SHEET_ID: "1TPT9JRnmKSdCxjSql-SGl21mUyk2ZcCnUoa3lubcAyc",  // Ruler Measurements (Responses)
+  DOMAIN: "wsdisplay.com"
+};
+const LOC_NAMES = { ALL:"All Presses", CA:"California", MX:"Mexico", PA:"Pennsylvania" };
+// canonical materials + cadence
+const CADENCE = { "Stretch":"Monthly", "Black and White":"Monthly", "Backlit":"Monthly", "MultiStretch":"Monthly",
+  "Mesh":"Quarterly", "Tent":"Quarterly", "SilverBack":"Quarterly", "SmoothWall":"Quarterly" };
+const MAT_ORDER = ["Stretch","Black and White","Backlit","MultiStretch","Mesh","Tent","SilverBack","SmoothWall"];
+// overdue thresholds (days since last measurement)
+const THRESH = { Monthly:{due:30, over:45}, Quarterly:{due:92, over:110} };
+
+const HEADER_RE = /(CA|MX|PA)\s*Monti-?\s*(\d)\s+(.+?)\s+(Monthly|Quarterly)\s+(Horizontal|Vertical)/i;
+
+function canonMat(s){
+  const k = String(s).toLowerCase().replace(/[^a-z]/g,"");
+  const map = { stretch:"Stretch", blackandwhite:"Black and White", backlit:"Backlit", multistretch:"MultiStretch",
+    mesh:"Mesh", tent:"Tent", silverback:"SilverBack", smoothwall:"SmoothWall" };
+  return map[k] || String(s).trim();
+}
+function isMeas(s){
+  if(s === undefined || s === null) return false;
+  s = String(s).trim();
+  if(!s) return false;
+  if(/^(na|n\/a|ma|pending|complete|default|\.|\.\.|-|–|—|0|1)$/i.test(s)) return false;
+  return /\d\s*["”]?\s*\/\s*["”]?\s*\d/.test(s);   // expected / actual, e.g. 100/101.175 or 89"/89.5"
+}
+function devPct(s){
+  const nums = String(s).replace(/["”]/g,"").match(/-?\d+(\.\d+)?/g);
+  if(!nums || nums.length < 2) return null;
+  const exp = parseFloat(nums[0]), act = parseFloat(nums[1]);
+  if(!exp) return null;
+  return (act - exp) / exp * 100;
+}
+function parseDate(raw){
+  if(typeof raw === "number" && raw > 30000 && raw < 70000)
+    return new Date(Date.UTC(1899, 11, 30) + raw * 86400000);
+  const s = String(raw).trim();
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);            // M/D/YYYY [time]
+  if(m) return new Date(Date.UTC(+m[3], +m[1]-1, +m[2]));
+  m = s.match(/^(\d{4})(\d{2})(\d{2})/);                                 // YYYYMMDD
+  if(m) return new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);                 // YYYY-M-D
+  if(m) return new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  return null;
+}
+
+/* ============ AUTH ============ */
+let user = null, accessToken = null, tokenClient = null;
+function initAuth(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){ setTimeout(initAuth, 300); return; }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CONFIG.CLIENT_ID,
+    scope: "openid email profile https://www.googleapis.com/auth/spreadsheets.readonly",
+    callback: async (resp) => {
+      if(resp.error){ return; }
+      accessToken = resp.access_token;
+      const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers:{ Authorization:"Bearer "+accessToken } });
+      const info = await r.json();
+      if(!info.email || !info.email.endsWith("@"+CONFIG.DOMAIN)){
+        alert("Please sign in with your "+CONFIG.DOMAIN+" account.");
+        try{ google.accounts.oauth2.revoke(accessToken, ()=>{}); }catch(e){}
+        accessToken = null; return;
+      }
+      user = { name: info.name || info.email, email: info.email };
+      updateUserUI(); loadAll();
+    }
+  });
+  // silent sign-in for returning users
+  setTimeout(()=>{ if(tokenClient && !user) tokenClient.requestAccessToken({ prompt:"" }); }, 600);
+}
+window.addEventListener("load", initAuth);
+function handleAuthClick(){
+  if(user){ if(accessToken){ try{ google.accounts.oauth2.revoke(accessToken, ()=>{}); }catch(e){} } user=null; accessToken=null; location.reload(); return; }
+  if(!tokenClient){ alert("Google sign-in is still loading — try again in a second."); return; }
+  tokenClient.requestAccessToken({ prompt:"" });
+}
+function updateUserUI(){
+  const card=document.getElementById("userCard"), btn=document.getElementById("authBtn");
+  if(user){ card.style.display="block"; document.getElementById("userName").textContent=user.name; document.getElementById("userEmail").textContent=user.email; btn.textContent="Sign out"; }
+  else { card.style.display="none"; btn.textContent="Sign in with Google"; }
+}
+
+/* ============ DATA ============ */
+let DATA = {};              // press -> material -> {date, by, cadence, devH, devV}
+let currentLoc = "ALL";
+
+async function gapi(url){
+  const r = await fetch(url, { headers:{ Authorization:"Bearer "+accessToken } });
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+async function loadAll(){
+  document.getElementById("content").innerHTML = '<div class="loading">Loading ruler measurements…</div>';
+  try{
+    const meta = await gapi(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}?fields=sheets(properties(title))`);
+    const titles = (meta.sheets||[]).map(s=>s.properties.title);
+    const last = {};
+    for(const t of titles){
+      let vals;
+      try{ vals = (await gapi(`https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodeURIComponent("'"+t+"'!A1:BZ3000")}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`)).values || []; }
+      catch(e){ continue; }
+      parseTab(vals, last);
+    }
+    DATA = last;
+    updateCounts();
+    selectLoc(currentLoc);
+  }catch(e){
+    document.getElementById("content").innerHTML = '<div class="empty"><div class="ei">⚠️</div>Could not load the sheet — '+e.message+'</div>';
+    if(String(e).includes("401")) accessToken=null;
+  }
+}
+function parseTab(rows, last){
+  if(!rows || !rows.length) return;
+  const hi = rows.findIndex(r => Array.isArray(r) && r.some(c => HEADER_RE.test(String(c||""))));
+  if(hi < 0) return;
+  const header = rows[hi];
+  let dateCol = header.findIndex(c => /^\s*(date|timestamp)/i.test(String(c||"")));
+  if(dateCol < 0) dateCol = 0;
+  const groups = {}; // press||material -> {press, material, cadence, H, V}
+  header.forEach((c,idx)=>{
+    const m = String(c||"").match(HEADER_RE);
+    if(!m) return;
+    const press = m[1].toUpperCase()+" Monti-"+m[2];
+    const material = canonMat(m[3]);
+    const cadence = /quarter/i.test(m[4]) ? "Quarterly" : "Monthly";
+    const dir = /horiz/i.test(m[5]) ? "H" : "V";
+    const key = press+"||"+material;
+    const g = groups[key] = groups[key] || { press, material, cadence, H:-1, V:-1 };
+    g[dir] = idx;
+  });
+  for(let r=hi+1; r<rows.length; r++){
+    const row = rows[r]; if(!Array.isArray(row)) continue;
+    const date = parseDate(row[dateCol]); if(!date) continue;
+    const by = String(row[1]||"");
+    Object.values(groups).forEach(g=>{
+      const hCell = g.H>=0 ? row[g.H] : "", vCell = g.V>=0 ? row[g.V] : "";
+      if(!isMeas(hCell) && !isMeas(vCell)) return;
+      const cur = last[g.press] = last[g.press] || {};
+      const rec = cur[g.material];
+      if(!rec || date.getTime() > rec.date.getTime()){
+        cur[g.material] = { date, by, cadence: CADENCE[g.material] || g.cadence,
+          devH: isMeas(hCell) ? devPct(hCell) : null, devV: isMeas(vCell) ? devPct(vCell) : null };
+      }
+    });
+  }
+}
+
+/* ============ STATUS ============ */
+function daysAgo(d){ return Math.floor((Date.now() - d.getTime())/86400000); }
+function statusOf(rec){
+  const t = THRESH[rec.cadence] || THRESH.Monthly, a = daysAgo(rec.date);
+  return a > t.over ? "over" : a > t.due ? "due" : "ok";
+}
+const STLABEL = { ok:"✅ Current", due:"⚠️ Due soon", over:"🔴 Overdue", never:"— Never" };
+function pressLoc(p){ return p.slice(0,2); }
+function presses(loc){
+  return Object.keys(DATA).filter(p => loc==="ALL" || pressLoc(p)===loc)
+    .sort((a,b)=> a.localeCompare(b, undefined, {numeric:true}));
+}
+function counts(loc){
+  const c = { ok:0, due:0, over:0, tot:0 };
+  presses(loc).forEach(p => Object.keys(DATA[p]).forEach(mat => { c[statusOf(DATA[p][mat])]++; c.tot++; }));
+  return c;
+}
+function updateCounts(){
+  ["CA","MX","PA"].forEach(loc=>{
+    const c = counts(loc), el = document.getElementById("cnt"+loc);
+    const bad = c.over; el.textContent = bad>0 ? bad+"⚠" : c.tot; el.className = "cnt"+(bad>0?" bad":"");
+  });
+}
+
+/* ============ RENDER ============ */
+function selectLoc(loc){
+  currentLoc = loc;
+  document.querySelectorAll(".nav-item[data-loc]").forEach(n=>n.classList.toggle("active", n.dataset.loc===loc));
+  document.getElementById("pageTitle").innerHTML = loc==="ALL" ? "📏 Ruler Verification Tracker" : "📏 "+LOC_NAMES[loc];
+  if(!user) return;
+  render();
+}
+function fmt(d){ return d.toISOString().slice(0,10); }
+function devCell(v){
+  if(v === null || v === undefined || isNaN(v)) return '<span class="ago">—</span>';
+  const a = Math.abs(v), cls = a>=2 ? "hi" : a>=1 ? "mid" : "lo";
+  return `<span class="dev ${cls}">${v>=0?"+":""}${v.toFixed(2)}%</span>`;
+}
+function matRows(press){
+  const mats = Object.keys(DATA[press]).sort((a,b)=>{
+    const ai = MAT_ORDER.indexOf(a), bi = MAT_ORDER.indexOf(b);
+    return (ai<0?99:ai) - (bi<0?99:bi);
+  });
+  return mats.map(mat=>{
+    const rec = DATA[press][mat], st = statusOf(rec), a = daysAgo(rec.date);
+    return `<tr>
+      <td class="mat">${mat}</td>
+      <td><span class="chip ${rec.cadence==="Monthly"?"c-month":"c-qtr"}">${rec.cadence.toUpperCase()}</span></td>
+      <td>${fmt(rec.date)} <span class="ago">(${a}d ago)</span></td>
+      <td><span class="chip c-${st}">${STLABEL[st]}</span></td>
+      <td>${devCell(rec.devH)}</td>
+      <td>${devCell(rec.devV)}</td>
+    </tr>`;
+  }).join("");
+}
+function render(){
+  const el = document.getElementById("content");
+  const ps = presses(currentLoc);
+  if(!ps.length){ el.innerHTML = '<div class="empty"><div class="ei">📭</div>No ruler measurements found for this view.</div>'; return; }
+
+  const c = counts(currentLoc);
+  const stats = `<div class="stats">
+    <div class="stat tot"><div class="lbl">Press × Material</div><div class="val">${c.tot}</div></div>
+    <div class="stat ok"><div class="lbl">Current</div><div class="val">${c.ok}</div></div>
+    <div class="stat due"><div class="lbl">Due soon</div><div class="val">${c.due}</div></div>
+    <div class="stat over"><div class="lbl">Overdue</div><div class="val">${c.over}</div></div>
+  </div>`;
+
+  // attention panel (overdue + due)
+  const alerts = [];
+  ps.forEach(p => Object.keys(DATA[p]).forEach(mat=>{
+    const rec = DATA[p][mat], st = statusOf(rec);
+    if(st==="over" || st==="due") alerts.push({p, mat, rec, st});
+  }));
+  alerts.sort((x,y)=> (x.st==="over"?0:1)-(y.st==="over"?0:1) || daysAgo(y.rec.date)-daysAgo(x.rec.date));
+  const alertHtml = alerts.length ? alerts.map(a=>`
+    <div class="alert ${a.st==="due"?"due":""}"><div class="t">${a.p} · ${a.mat}</div>
+      <div class="d">${a.rec.cadence} · last ${fmt(a.rec.date)} (${daysAgo(a.rec.date)}d ago) — ${a.st==="over"?"overdue":"due soon"}</div></div>`).join("")
+    : '<div class="d" style="padding:0 4px;color:var(--muted)">Everything is current in this view. 🎉</div>';
+  const attention = `<div class="panel"><div class="panel-head"><h2>⏰ Needs a ruler</h2>
+      <span class="ago">Overdue &amp; due-soon by cadence (monthly / quarterly)</span></div>
+      <div class="alerts">${alertHtml}</div></div>`;
+
+  const locPanels = ["CA","MX","PA"].filter(l=>currentLoc==="ALL"||currentLoc===l).map(loc=>{
+    const lp = ps.filter(p=>pressLoc(p)===loc); if(!lp.length) return "";
+    const blocks = lp.map(p=>`<div class="press-h">${p}</div>
+      <table><thead><tr><th>Material</th><th>Cadence</th><th>Last measured</th><th>Status</th><th>Latest H</th><th>Latest V</th></tr></thead>
+      <tbody>${matRows(p)}</tbody></table>`).join("");
+    return `<div class="panel"><div class="panel-head"><h2>${LOC_NAMES[loc]}</h2><span class="ago">${lp.length} press${lp.length>1?"es":""}</span></div>${blocks}
+      <div class="note">Only materials with at least one recorded measurement are shown. H/V % = latest expected-vs-actual deviation.</div></div>`;
+  }).join("");
+
+  el.innerHTML = stats + attention + locPanels;
+}
+</script>
+</body>
+</html>
