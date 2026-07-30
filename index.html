@@ -86,7 +86,7 @@
   <div class="logo-card"><div class="tag">WholeSale Displays</div><div class="logo">WS<span>Display</span></div></div>
   <div class="app-title">RULER TRACKER</div>
   <div class="nav-label">Views</div>
-  <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📏</span> All Presses</div>
+  <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📏</span> All Heat Presses</div>
   <div class="nav-label loc">Locations</div>
   <div class="nav-item" data-loc="CA" onclick="selectLoc('CA')"><span class="ico">☀️</span> California <span class="cnt" id="cntCA">–</span></div>
   <div class="nav-item" data-loc="MX" onclick="selectLoc('MX')"><span class="ico">🌵</span> Mexico <span class="cnt" id="cntMX">–</span></div>
@@ -114,6 +114,7 @@
     </div>
   </div>
 </div>
+
 <script>
 /* ============ CONFIG ============ */
 const CONFIG = {
@@ -121,11 +122,13 @@ const CONFIG = {
   SHEET_ID: "1TPT9JRnmKSdCxjSql-SGl21mUyk2ZcCnUoa3lubcAyc",  // Ruler Measurements (Responses)
   DOMAIN: "wsdisplay.com"
 };
-const LOC_NAMES = { ALL:"All Presses", CA:"California", MX:"Mexico", PA:"Pennsylvania" };
+const LOC_NAMES = { ALL:"All Heat Presses", CA:"California", MX:"Mexico", PA:"Pennsylvania" };
 // canonical materials + cadence
 const CADENCE = { "Stretch":"Monthly", "Black and White":"Monthly", "Backlit":"Monthly", "MultiStretch":"Monthly",
   "Mesh":"Quarterly", "Tent":"Quarterly", "SilverBack":"Quarterly", "SmoothWall":"Quarterly" };
 const MAT_ORDER = ["Stretch","Black and White","Backlit","MultiStretch","Mesh","Tent","SilverBack","SmoothWall"];
+// Every heat press runs all 8 materials — 4 required monthly + 4 required quarterly. Full expected grid so a never-done material shows as overdue.
+const PRESSES = ["CA Monti-1","CA Monti-2","MX Monti-1","MX Monti-3","MX Monti-4","PA Monti-1","PA Monti-2"];
 // Verification calendar — the exact upload Wednesdays from the Ruler Verification Frequency Chart (2026, pinned).
 // Monthly = every 4 weeks (blue circles); Quarterly = the four red Wednesdays.
 const SCHEDULE = {
@@ -276,23 +279,29 @@ function parseTab(rows, last){
 
 /* ============ STATUS ============ */
 function daysAgo(d){ return Math.floor((Date.now() - d.getTime())/86400000); }
+// The expected record for a heat press + material: the real upload if present, otherwise a never-done placeholder.
+function recFor(press, mat){
+  const cad = CADENCE[mat] || "Monthly";
+  if(DATA[press] && DATA[press][mat]) return DATA[press][mat];
+  return { date:null, by:"", cadence:cad, devH:null, devV:null, never:true };
+}
 function statusOf(rec){
   const now = Date.now();
   const due = lastDue(rec.cadence, now);
-  if(due === null) return "ok";                                    // no scheduled Wednesday has arrived yet this year
-  if(rec.date.getTime() >= due - EARLY_DAYS*86400000) return "ok"; // uploaded for the current scheduled period
-  const missedBy = Math.floor((now - due)/86400000);               // days since the missed Wednesday
+  if(due === null) return "ok";                                                // no scheduled Wednesday has arrived yet this year
+  if(rec.date && rec.date.getTime() >= due - EARLY_DAYS*86400000) return "ok";  // uploaded for the current scheduled period
+  const missedBy = Math.floor((now - due)/86400000);                            // days since the missed Wednesday (never-done counts too)
   return missedBy <= GRACE_DAYS ? "due" : "over";
 }
 const STLABEL = { ok:"✅ Current", due:"⚠️ Due soon", over:"🔴 Overdue", never:"— Never" };
 function pressLoc(p){ return p.slice(0,2); }
 function presses(loc){
-  return Object.keys(DATA).filter(p => loc==="ALL" || pressLoc(p)===loc)
+  return PRESSES.filter(p => loc==="ALL" || pressLoc(p)===loc)
     .sort((a,b)=> a.localeCompare(b, undefined, {numeric:true}));
 }
 function counts(loc){
   const c = { ok:0, due:0, over:0, tot:0 };
-  presses(loc).forEach(p => Object.keys(DATA[p]).forEach(mat => { c[statusOf(DATA[p][mat])]++; c.tot++; }));
+  presses(loc).forEach(p => MAT_ORDER.forEach(mat => { c[statusOf(recFor(p,mat))]++; c.tot++; }));
   return c;
 }
 function updateCounts(){
@@ -319,17 +328,15 @@ function devCell(v){
   return `<span class="dev ${cls}">${v>=0?"+":""}${v.toFixed(2)}%</span>`;
 }
 function matRows(press){
-  const mats = Object.keys(DATA[press]).sort((a,b)=>{
-    const ai = MAT_ORDER.indexOf(a), bi = MAT_ORDER.indexOf(b);
-    return (ai<0?99:ai) - (bi<0?99:bi);
-  });
-  return mats.map(mat=>{
-    const rec = DATA[press][mat], st = statusOf(rec), a = daysAgo(rec.date);
+  return MAT_ORDER.map(mat=>{
+    const rec = recFor(press, mat), st = statusOf(rec);
+    const label = rec.never ? (st==="ok" ? "— Not due yet" : "🔴 Never done") : STLABEL[st];
+    const measured = rec.date ? `${fmt(rec.date)} <span class="ago">(${daysAgo(rec.date)}d ago)</span>` : '<span class="ago">never uploaded</span>';
     return `<tr>
       <td class="mat">${mat}</td>
       <td><span class="chip ${rec.cadence==="Monthly"?"c-month":"c-qtr"}">${rec.cadence.toUpperCase()}</span></td>
-      <td>${fmt(rec.date)} <span class="ago">(${a}d ago)</span></td>
-      <td><span class="chip c-${st}">${STLABEL[st]}</span><div class="ago" style="margin-top:3px">next due ${nextDueStr(rec)}</div></td>
+      <td>${measured}</td>
+      <td><span class="chip c-${st}">${label}</span><div class="ago" style="margin-top:3px">next due ${nextDueStr(rec)}</div></td>
       <td>${devCell(rec.devH)}</td>
       <td>${devCell(rec.devV)}</td>
     </tr>`;
@@ -342,36 +349,46 @@ function render(){
 
   const c = counts(currentLoc);
   const stats = `<div class="stats">
-    <div class="stat tot"><div class="lbl">Press × Material</div><div class="val">${c.tot}</div></div>
+    <div class="stat tot"><div class="lbl">Heat Press × Material</div><div class="val">${c.tot}</div></div>
     <div class="stat ok"><div class="lbl">Current</div><div class="val">${c.ok}</div></div>
     <div class="stat due"><div class="lbl">Due soon</div><div class="val">${c.due}</div></div>
     <div class="stat over"><div class="lbl">Overdue</div><div class="val">${c.over}</div></div>
   </div>`;
 
-  // attention panel (overdue + due)
-  const alerts = [];
-  ps.forEach(p => Object.keys(DATA[p]).forEach(mat=>{
-    const rec = DATA[p][mat], st = statusOf(rec);
-    if(st==="over" || st==="due") alerts.push({p, mat, rec, st});
+  // attention panels — overdue and due-soon kept separate
+  const overdue = [], duesoon = [];
+  ps.forEach(p => MAT_ORDER.forEach(mat=>{
+    const rec = recFor(p, mat), st = statusOf(rec);
+    if(st==="over") overdue.push({p, mat, rec, st});
+    else if(st==="due") duesoon.push({p, mat, rec, st});
   }));
-  alerts.sort((x,y)=> (x.st==="over"?0:1)-(y.st==="over"?0:1) || daysAgo(y.rec.date)-daysAgo(x.rec.date));
-  const alertHtml = alerts.length ? alerts.map(a=>{
+  const overdueDays = r => r.date ? daysAgo(r.date) : 99999;
+  overdue.sort((x,y)=> overdueDays(y.rec)-overdueDays(x.rec));
+  duesoon.sort((x,y)=> overdueDays(y.rec)-overdueDays(x.rec));
+  const cardHtml = a => {
     const due = lastDue(a.rec.cadence, Date.now());
+    const upl = a.rec.date ? "last uploaded "+fmt(a.rec.date) : "never uploaded";
     return `<div class="alert ${a.st==="due"?"due":""}"><div class="t">${a.p} · ${a.mat}</div>
-      <div class="d">${a.rec.cadence} · was due ${due?fmtT(due):"—"} · last uploaded ${fmt(a.rec.date)} — ${a.st==="over"?"overdue":"due soon"}</div></div>`;
-  }).join("")
-    : '<div class="d" style="padding:0 4px;color:var(--muted)">Everything is current in this view. 🎉</div>';
+      <div class="d">${a.rec.cadence} · was due ${due?fmtT(due):"—"} · ${upl} — ${a.st==="over"?"overdue":"due soon"}</div></div>`;
+  };
+  const overdueHtml = overdue.length ? overdue.map(cardHtml).join("")
+    : '<div class="d" style="padding:0 4px;color:var(--muted)">Nothing overdue in this view. 🎉</div>';
+  const duesoonHtml = duesoon.length ? duesoon.map(cardHtml).join("")
+    : '<div class="d" style="padding:0 4px;color:var(--muted)">Nothing due soon in this view.</div>';
   const attention = `<div class="panel"><div class="panel-head"><h2>⏰ Needs a ruler</h2>
-      <span class="ago">Overdue &amp; due-soon by cadence (monthly / quarterly)</span></div>
-      <div class="alerts">${alertHtml}</div></div>`;
+      <span class="ago">Overdue by cadence (monthly / quarterly)</span></div>
+      <div class="alerts">${overdueHtml}</div></div>
+    <div class="panel"><div class="panel-head"><h2>🗑️ Due soon</h2>
+      <span class="ago">Coming due within the grace window</span></div>
+      <div class="alerts">${duesoonHtml}</div></div>`;
 
   const locPanels = ["CA","MX","PA"].filter(l=>currentLoc==="ALL"||currentLoc===l).map(loc=>{
     const lp = ps.filter(p=>pressLoc(p)===loc); if(!lp.length) return "";
     const blocks = lp.map(p=>`<div class="press-h">${p}</div>
       <table><thead><tr><th>Material</th><th>Cadence</th><th>Last measured</th><th>Status</th><th>Latest H</th><th>Latest V</th></tr></thead>
       <tbody>${matRows(p)}</tbody></table>`).join("");
-    return `<div class="panel"><div class="panel-head"><h2>${LOC_NAMES[loc]}</h2><span class="ago">${lp.length} press${lp.length>1?"es":""}</span></div>${blocks}
-      <div class="note">Only materials with at least one recorded measurement are shown. H/V % = latest expected-vs-actual deviation.</div></div>`;
+    return `<div class="panel"><div class="panel-head"><h2>${LOC_NAMES[loc]}</h2><span class="ago">${lp.length} heat press${lp.length>1?"es":""}</span></div>${blocks}
+      <div class="note">All 8 materials shown per heat press (4 required monthly + 4 required quarterly). "Never uploaded" counts as overdue. H/V % = latest expected-vs-actual deviation.</div></div>`;
   }).join("");
 
   el.innerHTML = stats + attention + locPanels;
