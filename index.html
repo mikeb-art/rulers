@@ -114,7 +114,6 @@
     </div>
   </div>
 </div>
-
 <script>
 /* ============ CONFIG ============ */
 const CONFIG = {
@@ -127,8 +126,17 @@ const LOC_NAMES = { ALL:"All Presses", CA:"California", MX:"Mexico", PA:"Pennsyl
 const CADENCE = { "Stretch":"Monthly", "Black and White":"Monthly", "Backlit":"Monthly", "MultiStretch":"Monthly",
   "Mesh":"Quarterly", "Tent":"Quarterly", "SilverBack":"Quarterly", "SmoothWall":"Quarterly" };
 const MAT_ORDER = ["Stretch","Black and White","Backlit","MultiStretch","Mesh","Tent","SilverBack","SmoothWall"];
-// overdue thresholds (days since last measurement)
-const THRESH = { Monthly:{due:30, over:45}, Quarterly:{due:92, over:110} };
+// Verification calendar — the exact upload Wednesdays from the Ruler Verification Frequency Chart (2026, pinned).
+// Monthly = every 4 weeks (blue circles); Quarterly = the four red Wednesdays.
+const SCHEDULE = {
+  Monthly:   ["2026-01-21","2026-02-18","2026-03-18","2026-04-15","2026-05-13","2026-06-10","2026-07-08","2026-08-05","2026-09-02","2026-09-30","2026-10-28","2026-11-25","2026-12-23"],
+  Quarterly: ["2026-03-18","2026-06-10","2026-09-02","2026-12-23"]
+};
+const EARLY_DAYS = 5;   // an upload up to 5 days before the scheduled Wednesday still counts for that period
+const GRACE_DAYS = 7;   // after a missed Wednesday, stay "due" (amber) this long before flipping to "overdue" (red)
+function schedTimes(cad){ return (SCHEDULE[cad]||SCHEDULE.Monthly).map(s=>{ const p=s.split("-"); return Date.UTC(+p[0], +p[1]-1, +p[2]); }); }
+function lastDue(cad, now){ let last=null; for(const t of schedTimes(cad)){ if(t<=now) last=t; } return last; }
+function nextDue(cad, now){ for(const t of schedTimes(cad)){ if(t>now) return t; } return null; }
 
 const HEADER_RE = /(CA|MX|PA)\s*Monti-?\s*(\d)\s+(.+?)\s+(Monthly|Quarterly)\s+(Horizontal|Vertical)/i;
 
@@ -269,8 +277,12 @@ function parseTab(rows, last){
 /* ============ STATUS ============ */
 function daysAgo(d){ return Math.floor((Date.now() - d.getTime())/86400000); }
 function statusOf(rec){
-  const t = THRESH[rec.cadence] || THRESH.Monthly, a = daysAgo(rec.date);
-  return a > t.over ? "over" : a > t.due ? "due" : "ok";
+  const now = Date.now();
+  const due = lastDue(rec.cadence, now);
+  if(due === null) return "ok";                                    // no scheduled Wednesday has arrived yet this year
+  if(rec.date.getTime() >= due - EARLY_DAYS*86400000) return "ok"; // uploaded for the current scheduled period
+  const missedBy = Math.floor((now - due)/86400000);               // days since the missed Wednesday
+  return missedBy <= GRACE_DAYS ? "due" : "over";
 }
 const STLABEL = { ok:"✅ Current", due:"⚠️ Due soon", over:"🔴 Overdue", never:"— Never" };
 function pressLoc(p){ return p.slice(0,2); }
@@ -299,6 +311,8 @@ function selectLoc(loc){
   render();
 }
 function fmt(d){ return d.toISOString().slice(0,10); }
+function fmtT(t){ return new Date(t).toISOString().slice(0,10); }
+function nextDueStr(rec){ const t = nextDue(rec.cadence, Date.now()); return t ? fmtT(t) : "—"; }
 function devCell(v){
   if(v === null || v === undefined || isNaN(v)) return '<span class="ago">—</span>';
   const a = Math.abs(v), cls = a>=2 ? "hi" : a>=1 ? "mid" : "lo";
@@ -315,7 +329,7 @@ function matRows(press){
       <td class="mat">${mat}</td>
       <td><span class="chip ${rec.cadence==="Monthly"?"c-month":"c-qtr"}">${rec.cadence.toUpperCase()}</span></td>
       <td>${fmt(rec.date)} <span class="ago">(${a}d ago)</span></td>
-      <td><span class="chip c-${st}">${STLABEL[st]}</span></td>
+      <td><span class="chip c-${st}">${STLABEL[st]}</span><div class="ago" style="margin-top:3px">next due ${nextDueStr(rec)}</div></td>
       <td>${devCell(rec.devH)}</td>
       <td>${devCell(rec.devV)}</td>
     </tr>`;
@@ -341,9 +355,11 @@ function render(){
     if(st==="over" || st==="due") alerts.push({p, mat, rec, st});
   }));
   alerts.sort((x,y)=> (x.st==="over"?0:1)-(y.st==="over"?0:1) || daysAgo(y.rec.date)-daysAgo(x.rec.date));
-  const alertHtml = alerts.length ? alerts.map(a=>`
-    <div class="alert ${a.st==="due"?"due":""}"><div class="t">${a.p} · ${a.mat}</div>
-      <div class="d">${a.rec.cadence} · last ${fmt(a.rec.date)} (${daysAgo(a.rec.date)}d ago) — ${a.st==="over"?"overdue":"due soon"}</div></div>`).join("")
+  const alertHtml = alerts.length ? alerts.map(a=>{
+    const due = lastDue(a.rec.cadence, Date.now());
+    return `<div class="alert ${a.st==="due"?"due":""}"><div class="t">${a.p} · ${a.mat}</div>
+      <div class="d">${a.rec.cadence} · was due ${due?fmtT(due):"—"} · last uploaded ${fmt(a.rec.date)} — ${a.st==="over"?"overdue":"due soon"}</div></div>`;
+  }).join("")
     : '<div class="d" style="padding:0 4px;color:var(--muted)">Everything is current in this view. 🎉</div>';
   const attention = `<div class="panel"><div class="panel-head"><h2>⏰ Needs a ruler</h2>
       <span class="ago">Overdue &amp; due-soon by cadence (monthly / quarterly)</span></div>
