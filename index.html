@@ -226,6 +226,13 @@ let locFilter = "all";      // all | monthly | quarterly | none — applies to t
 let chartInst = null;       // the trend chart instance (destroyed/rebuilt each render)
 const PALETTE = ["#1f6fd6","#e15759","#1e9e4a","#d98a00","#7b5cd6","#0f9a9a","#c0399b","#8a6d3b","#2f6cb3","#e07b39","#4e8a1e","#b02b6b"];
 window.setLocFilter = function(f){ locFilter = f; render(); };
+let chartMats = new Set(MAT_ORDER);   // which materials appear on the deviation trend chart (independent of the table filter)
+window.setChartMats = function(m){
+  if(m === "__all__") chartMats = new Set(MAT_ORDER);
+  else if(m === "__none__") chartMats = new Set();
+  else if(chartMats.has(m)) chartMats.delete(m); else chartMats.add(m);
+  render();
+};
 // Color coding is driven by the size deviation in INCHES (actual - expected), not the percent:
 //   under +0.5" (too small) -> red · +0.5" to +1.5" (on target) -> green · over +1.5" (too big) -> orange
 function inchClass(inch){
@@ -378,7 +385,7 @@ function matRows(press){
 // build the trend chart for the current location (deviation % over time, one line per heat-press × material)
 function buildTrend(loc){
   const series = [];
-  presses(loc).forEach(p => MAT_ORDER.filter(matFilter).forEach(mat=>{
+  presses(loc).forEach(p => MAT_ORDER.filter(m => chartMats.has(m)).forEach(mat=>{
     const rec = DATA[p] && DATA[p][mat];
     if(!rec || !rec.hist || !rec.hist.length) return;
     const pts = rec.hist.slice().sort((a,b)=>a.t-b.t).map(h=>{
@@ -473,8 +480,16 @@ function render(){
       <div class="note">All 8 materials per heat press (4 monthly + 4 quarterly). "Never uploaded" counts as overdue. Numbers are % deviation; colors use the size gap in inches — under +0.5" red, +0.5–1.5" green, over +1.5" orange.</div></div>`;
   }).join("");
 
+  const chartToggle = m => `<button class="pill${chartMats.has(m)?" on":""}" onclick="setChartMats('${m}')">${m}</button>`;
+  const chartBar = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 18px 0">
+      <span style="font-weight:700;font-size:12px;color:#3d5a80">Materials:</span>
+      <button class="pill${chartMats.size===MAT_ORDER.length?" on":""}" onclick="setChartMats('__all__')">All</button>
+      <button class="pill${chartMats.size===0?" on":""}" onclick="setChartMats('__none__')">None</button>
+      <span style="width:1px;height:18px;background:#d3deeb;margin:0 4px"></span>
+      ${MAT_ORDER.map(chartToggle).join("")}</div>`;
   const chartPanel = isLoc ? `<div class="panel"><div class="panel-head"><h2>📈 Deviation trend</h2>
       <span class="ago">Average % deviation over time · one line per heat press × material</span></div>
+      ${chartBar}
       <div style="padding:16px 18px;height:340px"><canvas id="trendChart"></canvas></div></div>` : "";
 
   el.innerHTML = stats + attention + filterBar + locPanels + chartPanel;
