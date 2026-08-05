@@ -155,10 +155,15 @@ function isMeas(s){
   s = String(s).trim();
   if(!s) return false;
   if(/^(na|n\/a|ma|pending|complete|default|\.|\.\.|-|–|—|0|1)$/i.test(s)) return false;
-  return /\d\s*["”]?\s*\/\s*["”]?\s*\d/.test(s);   // expected / actual, e.g. 100/101.175 or 89"/89.5"
+  if(/\d\s*["”]?\s*\/\s*["”]?\s*\d/.test(s)) return true;   // expected / actual, e.g. 100/101.175 or 89"/89.5"
+  return /\d\s*["”]\s*\d/.test(s);   // tolerate a missing slash between quoted inches, e.g. 100"96.25" or 93"89.5"
 }
+// Some tabs have duplicate header columns for the same press/material/direction (e.g. PA Monti-1 Stretch
+// Horizontal appears twice, with data landing in only one of them). Keep every candidate column and,
+// per row, use whichever one actually holds a measurement.
+function pickMeas(row, idxs){ for(const i of idxs){ if(isMeas(row[i])) return row[i]; } return ""; }
 function devPct(s){
-  const nums = String(s).replace(/["”]/g,"").match(/-?\d+(\.\d+)?/g);
+  const nums = String(s).replace(/["”]/g," ").match(/-?\d+(\.\d+)?/g);
   if(!nums || nums.length < 2) return null;
   const exp = parseFloat(nums[0]), act = parseFloat(nums[1]);
   if(!exp) return null;
@@ -166,7 +171,7 @@ function devPct(s){
 }
 // raw size deviation in inches (actual - expected) — drives the color coding
 function devIn(s){
-  const nums = String(s).replace(/["”]/g,"").match(/-?\d+(\.\d+)?/g);
+  const nums = String(s).replace(/["”]/g," ").match(/-?\d+(\.\d+)?/g);
   if(!nums || nums.length < 2) return null;
   return parseFloat(nums[1]) - parseFloat(nums[0]);
 }
@@ -283,15 +288,15 @@ function parseTab(rows, last){
     const cadence = /quarter/i.test(m[4]) ? "Quarterly" : "Monthly";
     const dir = /horiz/i.test(m[5]) ? "H" : "V";
     const key = press+"||"+material;
-    const g = groups[key] = groups[key] || { press, material, cadence, H:-1, V:-1 };
-    g[dir] = idx;
+    const g = groups[key] = groups[key] || { press, material, cadence, H:[], V:[] };
+    g[dir].push(idx);
   });
   for(let r=hi+1; r<rows.length; r++){
     const row = rows[r]; if(!Array.isArray(row)) continue;
     const date = parseDate(row[dateCol]); if(!date) continue;
     const by = String(row[1]||"");
     Object.values(groups).forEach(g=>{
-      const hCell = g.H>=0 ? row[g.H] : "", vCell = g.V>=0 ? row[g.V] : "";
+      const hCell = pickMeas(row, g.H), vCell = pickMeas(row, g.V);
       const hasH = isMeas(hCell), hasV = isMeas(vCell);
       if(!hasH && !hasV) return;
       const cur = last[g.press] = last[g.press] || {};
